@@ -1,0 +1,6 @@
+
+.DS_Store
+*.jpg
+.ipynb_checkpoints/Data Exploration-checkpoint.ipynb
+breeds.txt
+dog_data.csv
