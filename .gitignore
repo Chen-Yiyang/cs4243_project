@@ -128,4 +128,7 @@ ui-tests/playwright-report
 .vscode
 
 ### Repository-specific ###
+breeds.txt
+dog/
+dog_data.csv
 new_dog/
