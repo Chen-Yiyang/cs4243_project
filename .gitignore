@@ -4,3 +4,5 @@
 breeds.txt
 dog_data.csv
 .ipynb_checkpoints/
+/data
+/baseline/*pt
