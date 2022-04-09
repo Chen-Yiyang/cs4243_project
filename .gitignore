@@ -129,6 +129,7 @@ ui-tests/playwright-report
 
 ### Repository-specific ###
 breeds.txt
+data/
 dog/
 dog_data.csv
 new_dog/
