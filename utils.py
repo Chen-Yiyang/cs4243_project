@@ -149,7 +149,7 @@ def run_epochs(
         loss = running_loss / num_batches
         accuracy = running_accuracy / num_batches
 
-        test_accuracy, _, _ = eval_test_accuracy(net, test_sets, input_size, batch_size)
+        test_accuracy, _, _ = eval_test_accuracy(net, test_sets, input_size, batch_size=batch_size)
 
         yield EpochResult(id, epoch, loss, accuracy, test_accuracy)
 
@@ -201,7 +201,7 @@ def run_experiments(
     })
 
 def plot_experiments(df):
-    sns.set(style="whitegrid", font_scale=1.2)
+    sns.set_theme(style="whitegrid", font_scale=1.2)
 
     grid = sns.FacetGrid(
         df.melt(
@@ -215,7 +215,7 @@ def plot_experiments(df):
     grid.map_dataframe(sns.lineplot, x="Epoch", y="Accuracy",
         hue="Experiment", palette="light:#001c75")
 
-    sns.set_theme()
+    sns.set_theme(style="white")
 
 ### Evaluation metrics ###
 
