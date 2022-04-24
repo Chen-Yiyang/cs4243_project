@@ -12,8 +12,8 @@ from pathlib import Path
 import secrets
 from typing import NamedTuple
 
-CLASSES = ['terrier', 'bulldog', 'schnauzer', 'sheepdog', 'retriever',
-           'spaniel', 'sheepdog', 'setter', 'hound', 'poodle']
+CLASSES = ["hound", "spaniel", "terrier", "retriever", "poodle", "setter", "schnauzer",
+"mountain", "bulldog", "sheepdog"]
 
 DATA_PATH = Path("data/")
 CHECKPOINT_PATH = Path("checkpoints/")
@@ -214,6 +214,8 @@ def plot_experiments(df):
     )
     grid.map_dataframe(sns.lineplot, x="Epoch", y="Accuracy",
         hue="Experiment", palette="light:#001c75")
+
+    sns.set_theme()
 
 ### Evaluation metrics ###
 
