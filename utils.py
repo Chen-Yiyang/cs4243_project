@@ -1,13 +1,23 @@
+import bs4
 from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score, classification_report
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sn
+import seaborn as sns
 import torch
+import torch.nn as nn
+from tqdm.notebook import trange
 
 from pathlib import Path
+import secrets
+from typing import NamedTuple
+
+CLASSES = ['terrier', 'bulldog', 'schnauzer', 'sheepdog', 'retriever',
+           'spaniel', 'sheepdog', 'setter', 'hound', 'poodle']
 
 DATA_PATH = Path("data/")
+CHECKPOINT_PATH = Path("checkpoints/")
+RESULTS_PATH = Path("results/")
 
 def save_dataset(data_x, data_y, type, size):
     DATA_PATH.mkdir(parents=True, exist_ok=True)
@@ -38,38 +48,157 @@ def save_tensor(tensor_x, tensor_y, type, size):
     torch.save(tensor_x, DATA_PATH / f"{type}_data_{size}.pt")
     torch.save(tensor_y, DATA_PATH / f"{type}_label_{size}.pt")
 
-### Lab utility functions ###
+def load_results(name, type, size):
+    return pd.read_csv(RESULTS_PATH / f"{name}_{type}_{size}.csv")
 
-def display_num_param(net):
-    nb_param = 0
-    for param in net.parameters():
-        nb_param += param.numel()
-    print('There are {} ({:.2f} million) parameters in this neural network'.format(
-        nb_param, nb_param/1e6)
-         )
+def save_results(df, name, type, size):
+    df.to_csv(RESULTS_PATH / f"{name}_{type}_{size}.csv")
 
-def show(X):
-    if X.dim() == 3 and X.size(0) == 3:
-        plt.imshow( np.transpose(  X.numpy() , (1, 2, 0))  )
-        plt.show()
-    elif X.dim() == 2:
-        plt.imshow(   X.numpy() , cmap='gray'  )
-        plt.show()
-    else:
-        print('WRONG TENSOR SIZE')
+### Utility functions ###
 
-def get_error( scores , labels ):
-    bs=scores.size(0)
+def render_2d(tensor):
+    assert tensor.dim() == 3 and tensor.size(0) == 3
+    plt.imshow(np.transpose(tensor.numpy() , (1, 2, 0)))
+    plt.show()
+
+def get_accuracy(scores, labels):
+    bs = scores.size(0)
     predicted_labels = scores.argmax(dim=1)
-    indicator = (predicted_labels == labels)
-    num_matches=indicator.sum()
+    num_matches = (predicted_labels == labels).sum()
+    return num_matches.detach().item() / bs
+
+### Experiment functions ###
+
+def eval_test_accuracy(net, test_sets, input_size, batch_size=200):
+    test_x, test_y = test_sets
+
+    running_accuracy = 0
+    num_batches = test_x.size(0) // batch_size
+
+    for i in range(0, num_batches*batch_size, batch_size):
+        batch_x = test_x[i:i+batch_size]
+        batch_y = test_y[i:i+batch_size]
+
+        inputs = batch_x.view((batch_size,) + input_size)
+        scores = net(inputs)
+
+        running_accuracy += get_accuracy(scores, batch_y)
+
+    total_accuracy = running_accuracy / num_batches
+    return total_accuracy
+
+class EpochResult(NamedTuple):
+    id: str
+    epoch: int
+    loss: float
+    accuracy: float
+    test_accuracy: float
+
+def run_epochs(
+    net, criterion, optimizer, train_sets, test_sets, input_size,
+    batch_size=200, num_epochs=100, num_minor_epochs=10
+):
+    train_x, train_y = train_sets
+    id = secrets.token_hex(4)
+
+    best_test_accuracy = 0
+    counter = 0
+
+    for epoch in trange(num_epochs):
+        running_loss, running_accuracy = 0, 0
+        shuffled_ids = torch.randperm(train_x.size(0))
+        num_batches = train_x.size(0) // batch_size
+
+        for i in range(0, num_batches*batch_size, batch_size):
+            optimizer.zero_grad()
+
+            batch_ids = shuffled_ids[i:i+batch_size]
+            batch_x = train_x[batch_ids]
+            batch_y = train_y[batch_ids]
+
+            inputs = batch_x.view((batch_size,) + input_size)
+
+            inputs.requires_grad_()
+
+            scores = net(inputs)
+            loss = criterion(scores, batch_y)
+            loss.backward()
+
+            optimizer.step()
+
+            running_loss += loss.detach().item()
+            running_accuracy += get_accuracy(scores, batch_y)
     
-    return 1-num_matches.float()/bs  
+        loss = running_loss / num_batches
+        accuracy = running_accuracy / num_batches
+
+        test_accuracy = eval_test_accuracy(net, test_sets, input_size, batch_size)
+
+        yield EpochResult(id, epoch, loss, accuracy, test_accuracy)
+
+        # Implement early stopping based on test accuracy
+
+        counter += 1
+        if test_accuracy > best_test_accuracy:
+            best_test_accuracy = test_accuracy
+            counter = 0
+            torch.save(net.state_dict(), CHECKPOINT_PATH / f"checkpoint_{id}.pt")
+        elif counter >= num_minor_epochs:
+            break
+    
+    net.load_state_dict(torch.load(CHECKPOINT_PATH / f"checkpoint_{id}.pt"))
+
+def run_experiments(
+    init_func, train_sets, test_sets, input_size,
+    num_experiments=5, num_epochs=100, num_minor_epochs=10, **kwargs
+):
+    ids = []
+    xs = []
+    train_ys = []
+    test_ys = []
+    runs = []
+
+    for run in range(num_experiments):
+        net, criterion, optimizer = init_func()
+        for result in run_epochs(
+            net, criterion, optimizer, train_sets, test_sets, input_size,
+            num_epochs=num_epochs, num_minor_epochs=num_minor_epochs, **kwargs
+        ):
+            ids.append(result.id)
+            xs.append(result.epoch)
+            train_ys.append(result.accuracy)
+            test_ys.append(result.test_accuracy)
+            runs.append(run)
+
+            if result.epoch == 0:
+                print(f"Experiment {run} ({result.id}):")
+            if result.epoch % num_minor_epochs == 0:
+                print(f"epoch = {result.epoch}\t loss = {result.loss:.3f}\t accuracy = {result.accuracy:.3f}\t test accuracy = {result.test_accuracy:.3f}")
+
+    return pd.DataFrame(data={
+        "Id": ids,
+        "Epoch": xs,
+        "Train": train_ys,
+        "Test": test_ys,
+        "Experiment": runs
+    })
+
+def plot_experiments(df):
+    sns.set(style="whitegrid", font_scale=1.2)
+
+    grid = sns.FacetGrid(
+        df.melt(
+            id_vars=["Experiment", "Epoch"],
+            value_vars=["Train", "Test"],
+            var_name="Dataset",
+            value_name="Accuracy"
+        ),
+        col="Dataset", height=6
+    )
+    grid.map_dataframe(sns.lineplot, x="Epoch", y="Accuracy",
+        hue="Experiment", palette="light:#001c75")
 
 ### Evaluation metrics ###
-
-CLASSES = ['terrier', 'bulldog', 'schnauzer', 'sheepdog', 'retriever',
-           'spaniel', 'sheepdog', 'setter', 'hound', 'poodle']
 
 def show_confusion_matrix(y_pred, y_true):
     y_pred = np.asarray(y_pred)
@@ -81,7 +210,7 @@ def show_confusion_matrix(y_pred, y_true):
                          columns=CLASSES)
 
     plt.figure(figsize=(12, 7))
-    sn.heatmap(df_cm, annot=True)
+    sns.heatmap(df_cm, annot=True)
 
 def show_eval_metrics(y_pred, y_true, average="macro"):
     y_pred = np.asarray(y_pred)
