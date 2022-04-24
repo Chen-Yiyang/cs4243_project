@@ -54,6 +54,12 @@ def load_results(name, type, size):
 def save_results(df, name, type, size):
     df.to_csv(RESULTS_PATH / f"{name}_{type}_{size}.csv")
 
+def load_checkpoint(net, id):
+    net.load_state_dict(torch.load(CHECKPOINT_PATH / f"checkpoint_{id}.pt"))
+
+def save_checkpoint(net, id):
+    torch.save(net.state_dict(), CHECKPOINT_PATH / f"checkpoint_{id}.pt")
+
 ### Utility functions ###
 
 def render_2d(tensor):
@@ -61,10 +67,9 @@ def render_2d(tensor):
     plt.imshow(np.transpose(tensor.numpy() , (1, 2, 0)))
     plt.show()
 
-def get_accuracy(scores, labels):
-    bs = scores.size(0)
-    predicted_labels = scores.argmax(dim=1)
-    num_matches = (predicted_labels == labels).sum()
+def get_accuracy(preds, labels):
+    bs = preds.size(0)
+    num_matches = (preds == labels).sum()
     return num_matches.detach().item() / bs
 
 ### Experiment functions ###
@@ -75,17 +80,23 @@ def eval_test_accuracy(net, test_sets, input_size, batch_size=200):
     running_accuracy = 0
     num_batches = test_x.size(0) // batch_size
 
+    pred_y = []
+    true_y = []
+
     for i in range(0, num_batches*batch_size, batch_size):
         batch_x = test_x[i:i+batch_size]
         batch_y = test_y[i:i+batch_size]
 
         inputs = batch_x.view((batch_size,) + input_size)
         scores = net(inputs)
+        preds = scores.argmax(dim=1)
 
-        running_accuracy += get_accuracy(scores, batch_y)
+        running_accuracy += get_accuracy(preds, batch_y)
+        pred_y.append(preds.cpu().numpy())
+        true_y.append(batch_y.cpu().numpy())
 
     total_accuracy = running_accuracy / num_batches
-    return total_accuracy
+    return (total_accuracy, np.concatenate(pred_y), np.concatenate(true_y))
 
 class EpochResult(NamedTuple):
     id: str
@@ -132,7 +143,7 @@ def run_epochs(
         loss = running_loss / num_batches
         accuracy = running_accuracy / num_batches
 
-        test_accuracy = eval_test_accuracy(net, test_sets, input_size, batch_size)
+        test_accuracy, _, _ = eval_test_accuracy(net, test_sets, input_size, batch_size)
 
         yield EpochResult(id, epoch, loss, accuracy, test_accuracy)
 
@@ -142,11 +153,11 @@ def run_epochs(
         if test_accuracy > best_test_accuracy:
             best_test_accuracy = test_accuracy
             counter = 0
-            torch.save(net.state_dict(), CHECKPOINT_PATH / f"checkpoint_{id}.pt")
+            save_checkpoint(net, id)
         elif counter >= num_minor_epochs:
             break
     
-    net.load_state_dict(torch.load(CHECKPOINT_PATH / f"checkpoint_{id}.pt"))
+    load_checkpoint(net, id)
 
 def run_experiments(
     init_func, train_sets, test_sets, input_size,
@@ -174,7 +185,7 @@ def run_experiments(
                 print(f"Experiment {run} ({result.id}):")
             if result.epoch % num_minor_epochs == 0:
                 print(f"epoch = {result.epoch}\t loss = {result.loss:.3f}\t accuracy = {result.accuracy:.3f}\t test accuracy = {result.test_accuracy:.3f}")
-
+        
     return pd.DataFrame(data={
         "Id": ids,
         "Epoch": xs,
