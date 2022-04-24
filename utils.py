@@ -35,12 +35,12 @@ def load_dataset(type, size):
 
     return (nparray_x, nparray_y)
 
-def load_tensor(type, size):
+def load_tensor(type, size, device=torch.device("cpu")):
     tensor_x = torch.load(DATA_PATH / f"{type}_data_{size}.pt")
     tensor_y = torch.load(DATA_PATH / f"{type}_label_{size}.pt")
     assert tensor_x.is_contiguous()
     assert tensor_y.is_contiguous()
-    return (tensor_x, tensor_y)
+    return (tensor_x.to(device), tensor_y.to(device))
 
 def save_tensor(tensor_x, tensor_y, type, size):
     assert tensor_x.is_contiguous()
@@ -67,6 +67,9 @@ def render_2d(tensor):
     plt.imshow(np.transpose(tensor.numpy() , (1, 2, 0)))
     plt.show()
 
+def count_num_params(net):
+    return sum(p.numel() for p in net.parameters() if p.requires_grad)
+
 def get_accuracy(preds, labels):
     bs = preds.size(0)
     num_matches = (preds == labels).sum()
@@ -89,9 +92,10 @@ def eval_test_accuracy(net, test_sets, input_size, batch_size=200):
 
         inputs = batch_x.view((batch_size,) + input_size)
         scores = net(inputs)
-        preds = scores.argmax(dim=1)
 
+        preds = scores.argmax(dim=1)
         running_accuracy += get_accuracy(preds, batch_y)
+
         pred_y.append(preds.cpu().numpy())
         true_y.append(batch_y.cpu().numpy())
 
@@ -138,7 +142,9 @@ def run_epochs(
             optimizer.step()
 
             running_loss += loss.detach().item()
-            running_accuracy += get_accuracy(scores, batch_y)
+
+            preds = scores.argmax(dim=1)
+            running_accuracy += get_accuracy(preds, batch_y)
     
         loss = running_loss / num_batches
         accuracy = running_accuracy / num_batches
