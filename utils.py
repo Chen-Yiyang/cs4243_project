@@ -55,7 +55,7 @@ def save_results(df, name, type, size):
     df.to_csv(RESULTS_PATH / f"{name}_{type}_{size}.csv")
 
 def load_checkpoint(net, id):
-    net.load_state_dict(torch.load(CHECKPOINT_PATH / f"checkpoint_{id}.pt"))
+    net.load_state_dict(torch.load(CHECKPOINT_PATH / f"checkpoint_{id}.pt", map_location=torch.device('cpu')))
 
 def save_checkpoint(net, id):
     torch.save(net.state_dict(), CHECKPOINT_PATH / f"checkpoint_{id}.pt")
@@ -77,7 +77,7 @@ def get_accuracy(preds, labels):
 
 ### Experiment functions ###
 
-def eval_test_accuracy(net, test_sets, input_size, batch_size=200):
+def eval_test_accuracy(net, mean, std, test_sets, input_size, batch_size=200):
     test_x, test_y = test_sets
 
     running_accuracy = 0
@@ -86,8 +86,9 @@ def eval_test_accuracy(net, test_sets, input_size, batch_size=200):
     pred_y = []
     true_y = []
 
+    net.eval()
     for i in range(0, num_batches*batch_size, batch_size):
-        batch_x = test_x[i:i+batch_size]
+        batch_x = (test_x[i:i+batch_size] - mean) / std
         batch_y = test_y[i:i+batch_size]
 
         inputs = batch_x.view((batch_size,) + input_size)
@@ -98,6 +99,7 @@ def eval_test_accuracy(net, test_sets, input_size, batch_size=200):
 
         pred_y.append(preds.cpu().numpy())
         true_y.append(batch_y.cpu().numpy())
+    net.train()
 
     total_accuracy = running_accuracy / num_batches
     return (total_accuracy, np.concatenate(pred_y), np.concatenate(true_y))
@@ -119,6 +121,8 @@ def run_epochs(
     best_test_accuracy = 0
     counter = 0
 
+    mean, std = train_x.mean(), train_x.std()
+
     for epoch in trange(num_epochs):
         running_loss, running_accuracy = 0, 0
         shuffled_ids = torch.randperm(train_x.size(0))
@@ -128,7 +132,7 @@ def run_epochs(
             optimizer.zero_grad()
 
             batch_ids = shuffled_ids[i:i+batch_size]
-            batch_x = train_x[batch_ids]
+            batch_x = (train_x[batch_ids] - mean) / std
             batch_y = train_y[batch_ids]
 
             inputs = batch_x.view((batch_size,) + input_size)
@@ -149,7 +153,7 @@ def run_epochs(
         loss = running_loss / num_batches
         accuracy = running_accuracy / num_batches
 
-        test_accuracy, _, _ = eval_test_accuracy(net, test_sets, input_size, batch_size=batch_size)
+        test_accuracy, _, _ = eval_test_accuracy(net, mean, std, test_sets, input_size, batch_size=batch_size)
 
         yield EpochResult(id, epoch, loss, accuracy, test_accuracy)
 
