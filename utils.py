@@ -70,11 +70,6 @@ def render_2d(tensor):
 def count_num_params(net):
     return sum(p.numel() for p in net.parameters() if p.requires_grad)
 
-def get_accuracy(preds, labels):
-    bs = preds.size(0)
-    num_matches = (preds == labels).sum()
-    return num_matches.detach().item() / bs
-
 ### Experiment functions ###
 
 def eval_test_accuracy(net, mean, std, test_sets, input_size, batch_size=200):
@@ -86,7 +81,6 @@ def eval_test_accuracy(net, mean, std, test_sets, input_size, batch_size=200):
     pred_y = []
     true_y = []
 
-    net.eval()
     for i in range(0, num_batches*batch_size, batch_size):
         batch_x = (test_x[i:i+batch_size] - mean) / std
         batch_y = test_y[i:i+batch_size]
@@ -95,11 +89,10 @@ def eval_test_accuracy(net, mean, std, test_sets, input_size, batch_size=200):
         scores = net(inputs)
 
         preds = scores.argmax(dim=1)
-        running_accuracy += get_accuracy(preds, batch_y)
+        running_accuracy += accuracy_score(batch_y, preds)
 
         pred_y.append(preds.cpu().numpy())
         true_y.append(batch_y.cpu().numpy())
-    net.train()
 
     total_accuracy = running_accuracy / num_batches
     return (total_accuracy, np.concatenate(pred_y), np.concatenate(true_y))
@@ -148,12 +141,14 @@ def run_epochs(
             running_loss += loss.detach().item()
 
             preds = scores.argmax(dim=1)
-            running_accuracy += get_accuracy(preds, batch_y)
+            running_accuracy += accuracy_score(batch_y, preds)
     
         loss = running_loss / num_batches
         accuracy = running_accuracy / num_batches
 
+        net.eval()
         test_accuracy, _, _ = eval_test_accuracy(net, mean, std, test_sets, input_size, batch_size=batch_size)
+        net.train()
 
         yield EpochResult(id, epoch, loss, accuracy, test_accuracy)
 
@@ -229,7 +224,7 @@ def show_confusion_matrix(y_pred, y_true):
 
     # Build confusion matrix
     cf_matrix = confusion_matrix(y_true, y_pred, labels=range(len(CLASSES)))
-    df_cm = pd.DataFrame(cf_matrix / np.sum(cf_matrix) * 10, index=CLASSES,
+    df_cm = pd.DataFrame(cf_matrix / np.sum(cf_matrix) * len(CLASSES), index=CLASSES,
                          columns=CLASSES)
 
     plt.figure(figsize=(12, 7))
