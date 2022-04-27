@@ -1,5 +1,5 @@
 import bs4
-from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score, classification_report
+from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -70,6 +70,11 @@ def render_2d(tensor):
 def count_num_params(net):
     return sum(p.numel() for p in net.parameters() if p.requires_grad)
 
+def get_accuracy(preds, labels):
+    bs = preds.size(0)
+    num_matches = (preds == labels).sum()
+    return num_matches.detach().item() / bs
+
 ### Experiment functions ###
 
 def eval_test_accuracy(net, mean, std, test_sets, input_size, batch_size=200):
@@ -89,7 +94,7 @@ def eval_test_accuracy(net, mean, std, test_sets, input_size, batch_size=200):
         scores = net(inputs)
 
         preds = scores.argmax(dim=1)
-        running_accuracy += accuracy_score(batch_y, preds)
+        running_accuracy += get_accuracy(preds, batch_y)
 
         pred_y.append(preds.cpu().numpy())
         true_y.append(batch_y.cpu().numpy())
@@ -141,7 +146,7 @@ def run_epochs(
             running_loss += loss.detach().item()
 
             preds = scores.argmax(dim=1)
-            running_accuracy += accuracy_score(batch_y, preds)
+            running_accuracy += get_accuracy(batch_y, preds)
     
         loss = running_loss / num_batches
         accuracy = running_accuracy / num_batches
