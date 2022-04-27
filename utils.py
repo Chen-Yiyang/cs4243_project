@@ -216,10 +216,8 @@ def plot_experiments(df):
         ),
         col="Dataset", height=6
     )
-    num_experiments = df["Experiment"].nunique()
     grid.map_dataframe(sns.lineplot, x="Epoch", y="Accuracy",
-        hue="Experiment",
-        palette=sns.color_palette("light:#001c75", n_colors=num_experiments))
+        hue="Experiment", palette="blend:#001c75,#dbe4ff")
 
     sns.set_theme(style="white")
 
